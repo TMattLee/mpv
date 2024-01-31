@@ -1347,7 +1347,7 @@ if features['d3d-hwaccel'] and egl_angle.allowed()
     sources += files('video/out/opengl/hwdec_d3d11egl.c')
 endif
 if features['d3d-hwaccel'] and features['d3d11']
-    sources += files('video/out/d3d11/hwdec_d3d11va.c')
+    sources += files('video/out/d3d11/hwdec_d3d11va.c', 'video/out/d3d11/d3d11_upscaler.c')
 endif
 
 d3d9_hwaccel = get_option('d3d9-hwaccel').require(
