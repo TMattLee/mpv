@@ -27,6 +27,9 @@
 #include "context.h"
 #include "ra_d3d11.h"
 
+#include "d3d11_upscaler.h"
+#include "d3d11sdklayers.h"
+
 struct d3d11_opts {
     int feature_level;
     int warp;
@@ -103,6 +106,8 @@ struct priv {
     int64_t sync_qpc_time;
     int64_t vsync_duration_qpc;
     int64_t last_submit_qpc;
+	
+	struct d3d11_upscaler * upscaler;
 };
 
 static struct ra_tex *get_backbuffer(struct ra_ctx *ctx)
@@ -118,6 +123,8 @@ static struct ra_tex *get_backbuffer(struct ra_ctx *ctx)
         MP_ERR(ctx, "Couldn't get swapchain image\n");
         goto done;
     }
+	
+	d3d11_upscaler_upscale(ctx, p->upscaler, backbuffer);
 
     tex = ra_d3d11_wrap_tex(ctx->ra, (ID3D11Resource *)backbuffer);
 done:
@@ -134,6 +141,10 @@ static bool resize(struct ra_ctx *ctx)
         MP_ERR(ctx, "Attempt at resizing while a frame was in progress!\n");
         return false;
     }
+	
+	bool did_upscale = false;
+	did_upscale = d3d11_upscaler_update(ctx, p->device, p->upscaler, ctx->vo->dwidth, ctx->vo->dheight);
+	if(!did_upscale) MP_ERR(ctx, "Upscaler did not update successfully.\n");	
 
     hr = IDXGISwapChain_ResizeBuffers(p->swapchain, 0, ctx->vo->dwidth,
         ctx->vo->dheight, DXGI_FORMAT_UNKNOWN, 0);
@@ -467,11 +478,13 @@ static bool d3d11_init(struct ra_ctx *ctx)
         .max_frame_latency = ctx->vo->opts->swapchain_depth,
         .adapter_name = p->opts->adapter_name,
     };
+	
     if (!mp_d3d11_create_present_device(ctx->log, &dopts, &p->device))
         goto error;
 
     if (!spirv_compiler_init(ctx))
         goto error;
+	ID3D11Device_AddRef(p->device);
     ctx->ra = ra_d3d11_create(p->device, ctx->log, ctx->spirv);
     if (!ctx->ra)
         goto error;
@@ -500,8 +513,14 @@ static bool d3d11_init(struct ra_ctx *ctx)
         .usage = usage,
     };
     if (!mp_d3d11_create_swapchain(p->device, ctx->log, &scopts, &p->swapchain))
-        goto error;
-
+        goto error;	
+	
+	p->upscaler  = d3d11_upscaler_create(ctx, p->device);
+	
+	if(!p->upscaler) {
+		MP_ERR(ctx, "error creating upscaler");
+	}
+	
     return true;
 
 error:
